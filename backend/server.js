@@ -6,6 +6,7 @@ const db = require('./database/db-connector');
 
 // Express
 const express = require('express');
+const axios = require('axios');
 const app = express();
 
 // Middleware
@@ -18,8 +19,26 @@ const PORT = 9971;
 
 const bcrypt = require('bcryptjs');
 
+// microservices url
+const UNIT_SERVICE_URL = 'http://127.0.0.1:6901';
+
+
 // ########################################
 // ########## ROUTE HANDLERS
+
+// MICROSERVICE
+app.post('/api/convert', async (req, res) => {
+    try {
+        const response = await axios.post(`${UNIT_SERVICE_URL}/convert-unit`, req.body);
+        
+        res.json(response.data);
+    } catch (error) {
+        console.error("Error calling Unit Conversion Microservice:", error.message);
+        res.status(500).json({ error: "Microservice unreachable" });
+    }
+});
+
+app.listen(9971, () => console.log('Main Backend running on port 9971'));
 
 
 // REGISTER ROUTE
@@ -177,7 +196,7 @@ app.post('/profile/create', async function (req, res) {
         const profileAgeInt = parseInt(data.create_profile_age, 10);
 
         // Create and execute our queries
-        const query1 = `CALL sp_create_profile(?, ?, ?, ?, ?, ?, ?, @new_id);`;
+        const query1 = `CALL sp_create_profile(?, ?, ?, ?, ?, ?, ?, ?, @new_id);`;
 
         await db.query(query1, [
             userIdInt,
@@ -186,6 +205,7 @@ app.post('/profile/create', async function (req, res) {
             profileAgeInt,
             data.create_profile_breed,
             data.create_profile_weight,
+            data.create_profile_unit,
             data.create_profile_photo
         ]);
 
@@ -375,9 +395,10 @@ app.delete('/vet_record/delete', async function (req, res) {
     }
 });
 
+
 // ########################################
 // ########## LISTENER
 
 app.listen(PORT, function () {
-    console.log('Express started on http://classwork.engr.oregonstate.edu:' + PORT + '; press Ctrl-C to terminate.');
+    console.log('Express started on http://127.0.0.1:' + PORT + '; press Ctrl-C to terminate.');
 });

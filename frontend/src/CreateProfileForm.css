@@ -192,3 +192,26 @@
   align-items: center;    
 }
   
+/* Ensure the container lets items sit side-by-side */
+.input-with-unit {
+  display: flex;
+  align-items: center;
+  gap: 8px; /* Space between input and dropdown */
+}
+
+/* Style the dropdown to look like a clean label */
+.unit-selector {
+  background: transparent;
+  border: 1px solid #ccc; /* Or none, depending on your design */
+  border-radius: 4px;
+  padding: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  color: #333;
+}
+
+/* Make sure the number input doesn't take up 100% and squash the select */
+.input-with-unit input {
+  flex: 1; 
+  min-width: 0; /* Prevents overflow */
+}

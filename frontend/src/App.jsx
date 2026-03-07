@@ -15,7 +15,7 @@ import ProtectedRoute from './components/ProtectedRoute';
 
 // Define the backend port and URL for API requests
 const backendPort = 9971;
-const backendURL = `http://classwork.engr.oregonstate.edu:${backendPort}`;
+const backendURL = `http://127.0.0.1:${backendPort}`;
 
 function App() {
     const location = useLocation();

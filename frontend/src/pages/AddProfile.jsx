@@ -10,10 +10,11 @@ const INITIAL_FORM_STATE = {
     create_profile_age: 1,
     create_profile_breed: '',
     create_profile_weight: '',
+    create_profile_unit: 'lb',
     create_profile_photo: ''
 };
 
-const AddProfile = ({ backendURL, refreshProfiles }) => {
+const AddProfile = ({ backendURL }) => {
     const navigate = useNavigate();
     const [formData, setFormData] = useState(INITIAL_FORM_STATE);
 
@@ -23,6 +24,40 @@ const AddProfile = ({ backendURL, refreshProfiles }) => {
             ...prevState,
             [name]: value
         }));
+    };
+
+    // --- Microservice Integration ---
+    const handleUnitConversion = async (newUnit) => {
+        if (!formData.create_profile_weight) {
+            setFormData(prev => ({ ...prev, create_profile_unit: newUnit }));
+            return;
+        }
+
+        try {
+            const response = await fetch(`${backendURL}/api/convert`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    value: parseFloat(formData.create_profile_weight),
+                    from_unit: formData.create_profile_unit,
+                    to_unit: newUnit
+                }),
+            });
+
+            const data = await response.json();
+            
+            if (data && data.rounded_val !== undefined) {
+                setFormData((prev) => ({
+                    ...prev,
+                    create_profile_weight: data.rounded_val,
+                    create_profile_unit: newUnit
+                }));
+            } else {
+                console.error("Conversion error:", data.error);
+            }
+        } catch (error) {
+            console.error("Could not connect to conversion service:", error);
+        }
     };
 
     const handleSubmit = async (e) => {
@@ -46,7 +81,7 @@ const AddProfile = ({ backendURL, refreshProfiles }) => {
 
             if (response.ok) {
                 alert("Profile created successfully.");
-                refreshProfiles();
+                navigate("/profile");
                 setFormData(INITIAL_FORM_STATE);
             } else {
                 alert("Error creating profile.");
@@ -135,6 +170,16 @@ const AddProfile = ({ backendURL, refreshProfiles }) => {
                                 value={formData.create_profile_weight}
                                 onChange={handleChange}
                             />
+                            <select 
+                                className="unit-selector"
+                                name="create_profile_unit"
+                                id="create_profile_unit"
+                                value={formData.create_profile_unit}
+                                onChange={(e) => handleUnitConversion(e.target.value)}
+                            >
+                                <option value="lb">lb</option>
+                                <option value="kg">kg</option>
+                            </select>
                         </div> 
                     </div>
                 </div>

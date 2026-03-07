@@ -4,6 +4,12 @@
 const express = require('express');
 const path = require('path');
 const app = express();
+
+// cors stuff
+const cors = require('cors');
+app.use(cors({ credentials: true, origin: "*" }));
+app.use(express.json()); // this is needed for post requests
+
 app.use(express.static(path.join(__dirname, 'dist')));
 
 const PORT = 9972;
@@ -21,5 +27,5 @@ app.get('*', (req, res) => {
 // ########## LISTENER
 
 app.listen(PORT, () => {
-    console.log(`Server running: http://classwork.engr.oregonstate.edu:${PORT}...`);
+    console.log(`Server running: http://127.0.0.1:${PORT}...`);
 });

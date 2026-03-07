@@ -39,6 +39,7 @@ TABLE Profiles (
     age INT CHECK (age >= 0),
     breed VARCHAR(100) DEFAULT 'Mixed Breed',
     weight DECIMAL(5, 2) CHECK (weight > 0),
+    unit VARCHAR(10) DEFAULT 'lb',
     photo_url VARCHAR(255),
     PRIMARY KEY (profile_id),
     CONSTRAINT fk_Users_Profiles FOREIGN KEY (user_id) REFERENCES Users (user_id) ON DELETE CASCADE
