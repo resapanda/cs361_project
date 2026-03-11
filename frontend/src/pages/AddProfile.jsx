@@ -11,7 +11,9 @@ const INITIAL_FORM_STATE = {
     create_profile_breed: '',
     create_profile_weight: '',
     create_profile_unit: 'lb',
-    create_profile_photo: ''
+    create_profile_photo: '',
+    reminder_enabled: false,
+    reminder_time: '20:00'
 };
 
 const AddProfile = ({ backendURL }) => {
@@ -182,6 +184,33 @@ const AddProfile = ({ backendURL }) => {
                             </select>
                         </div> 
                     </div>
+                </div>
+
+                <div className="fields-section">
+                    <div className="form-group">
+                        <label>
+                            <input
+                                type="checkbox"
+                                name="reminder_enabled"
+                                checked={formData.reminder_enabled}
+                                onChange={handleChange}
+                            />
+                            Remind me for daily check-ins
+                        </label>
+                    </div>
+
+                    {formData.reminder_enabled && (
+                        <div className="form-group">
+                            <label htmlFor="reminder_time">Reminder Time: </label>
+                            <input
+                                type="time"
+                                name="reminder_time"
+                                id="reminder_time"
+                                value={formData.reminder_time}
+                                onChange={handleChange}
+                            />
+                        </div>
+                    )}
                 </div>
             </form>
             

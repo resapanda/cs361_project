@@ -6,6 +6,7 @@ import DeleteForm from '../components/DeleteForm';
 
 const Profile = ({backendURL}) => {
     const [profiles, setProfiles] = useState([]);
+    const [calorieGoals, setCalorieGoals] = useState({});
     const DEFAULT_PET_IMAGE = "/images/placeholder.png";
 
     const getData = async function () {
@@ -20,9 +21,26 @@ const Profile = ({backendURL}) => {
             // Update the profiles state with the response data
             setProfiles(profiles || []);
             
+            if (profiles) {
+                profiles.forEach(profile => {
+                    fetchGoal(profile.profile_id);
+                });
+            }
+
         } catch (error) {
             // If the API call fails, print the error to the console
             console.log(error);
+        }
+    };
+
+    const fetchGoal = async (id) => {
+        try {
+            const res = await fetch(`${backendURL}/api/daily-goal/${id}`);
+            const data = await res.json();
+            // Store the goal in the calorieGoals state object keyed by pet ID
+            setCalorieGoals(prev => ({ ...prev, [id]: data.daily_target }));
+        } catch (error) {
+            console.log(`Error fetching calorie goal for ID ${id}:`, error);
         }
     };
 
@@ -55,6 +73,11 @@ const Profile = ({backendURL}) => {
                                 <span className="stat-label">Age:</span> <span>{profile.age} years old</span>
                                 <span className="stat-label">Breed:</span> <span>{profile.breed}</span>
                                 <span className="stat-label">Weight:</span> <span>{profile.weight} lb</span>
+
+                                <span className="stat-label">Daily Goal:</span> 
+                                <span className="calorie-text">
+                                    {calorieGoals[profile.profile_id] ? `${calorieGoals[profile.profile_id]} kcal` : 'Calculating...'}
+                                </span>
                             </div>
                           
                             <div className="card-actions">

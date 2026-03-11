@@ -8,397 +8,420 @@ const db = require('./database/db-connector');
 const express = require('express');
 const axios = require('axios');
 const app = express();
+const http = require('http');
+const { Server } = require("socket.io");
+const server = http.createServer(app);
+
+const io = new Server(server, {
+    cors: {
+        origin: "*", // Allow React to connect
+        methods: ["GET", "POST"]
+    }
+});
 
 // Middleware
 const cors = require('cors');
 app.use(cors({ credentials: true, origin: "*" }));
 app.use(express.json()); // this is needed for post requests
 
+const asyncHandler = (fn) => (req, res, next) => {
+    Promise.resolve(fn(req, res, next)).catch(next);
+};
 
-const PORT = 9971;
+
+const PORT = 5123;
 
 const bcrypt = require('bcryptjs');
 
 // microservices url
 const UNIT_SERVICE_URL = 'http://127.0.0.1:6901';
-
+const NOTIFICATION_SERVICE_URL = 'http://127.0.0.1:6907';
+const DIET_CALCULATION_URL = 'http://127.0.0.1:6906';
+const FILE_SERVICE_URL = 'http://127.0.0.1:6905';
 
 // ########################################
 // ########## ROUTE HANDLERS
 
-// MICROSERVICE
-app.post('/api/convert', async (req, res) => {
-    try {
-        const response = await axios.post(`${UNIT_SERVICE_URL}/convert-unit`, req.body);
-        
-        res.json(response.data);
-    } catch (error) {
-        console.error("Error calling Unit Conversion Microservice:", error.message);
-        res.status(500).json({ error: "Microservice unreachable" });
-    }
+// WEBHOOK ROUTE
+app.post('/webhook', (req, res) => {
+    const { user_id, title, message } = req.body;
+
+    console.log(`>>> WEBHOOK HIT AT ${new Date().toLocaleTimeString()}! Data:`, req.body);
+
+    console.log(`\n Notification for User ${user_id}: ${message}`);
+
+    // Even though the request came in on 5123, 
+    // we emit the socket event through the 'io' instance on 9971
+    io.emit("new_notification", {
+        userId: user_id,
+        title: title,
+        message: message
+    });
+
+    res.status(200).send("OK");
 });
 
-app.listen(9971, () => console.log('Main Backend running on port 9971'));
+// MICROSERVICE
+app.post('/api/convert', asyncHandler(async (req, res) => {
+    const response = await axios.post(`${UNIT_SERVICE_URL}/convert-unit`, req.body);
+    res.json(response.data);
+}));
 
+app.get('/api/daily-goal/:profileId', asyncHandler(async (req, res) => {
+    const { profileId } = req.params;
+
+    const [profiles] = await db.query('SELECT * FROM Profiles WHERE profile_id = ?', [profileId]);
+    if (profiles.length === 0) return res.status(404).json({ error: "Pet not found" });
+    
+    const pet = profiles[0];
+
+    // validation for checking type
+    const species = (pet.pet_type || pet.type || 'dog').toLowerCase();
+
+    // convert weight to kg if it's currently in lb
+    let weightInKg = pet.weight; 
+    if (pet.unit === 'lb' || !pet.unit) {
+        weightInKg = pet.weight * 0.453592;
+    }
+
+    const payload = {
+        species: pet.type.toLowerCase(),
+        weight: weightInKg
+    };
+
+    const response = await axios.post(`${DIET_CALCULATION_URL}/calculate/calories`, payload);
+    res.json({
+        daily_target: response.data.daily_caloric_target
+    });
+}));
 
 // REGISTER ROUTE
-app.post('/register', async (req, res) => {
-    try {
-        const { email, password } = req.body;
-        
-        // Hash the password
-        const salt = await bcrypt.genSalt(10);
-        const hashedPassword = await bcrypt.hash(password, salt);
+app.post('/register', asyncHandler(async (req, res) => {
+    const { email, password } = req.body;
+    // Hash the password
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(password, salt);
 
-        const query = `INSERT INTO Users (email, password_hash) VALUES (?, ?);`;
-        await db.query(query, [email, hashedPassword]);
+    const query = `INSERT INTO Users (email, password_hash) VALUES (?, ?);`;
+    await db.query(query, [email, hashedPassword]);
 
-        res.status(201).json({ message: "User registered successfully!" });
-    } catch (error) {
-        // Handle duplicate emails
-        if (error.errno === 1062) {
-            return res.status(400).json({ error: "Email already exists." });
-        }
-        console.error(error);
-        res.status(500).json({ error: "Server error during registration." });
-    }
-});
+    res.status(201).json({ message: "User registered successfully!" });
+}));
 
 // LOGIN ROUTE
-app.post('/login', async (req, res) => {
-    try {
-        const { email, password } = req.body;
+app.post('/login', asyncHandler(async (req, res) => {
+    const { email, password } = req.body;
 
-        const [users] = await db.query('SELECT * FROM Users WHERE email = ?', [email]);
-        
-        if (users.length === 0) {
-            return res.status(400).json({ error: "Invalid email or password." });
-        }
+    const [users] = await db.query('SELECT * FROM Users WHERE email = ?', [email]);
+    const user = users[0];
 
-        // Compare entered password with the hashed password in DB
-        const isMatch = await bcrypt.compare(password, users[0].password_hash);
-        
-        if (!isMatch) {
-            return res.status(400).json({ error: "Invalid email or password." });
-        }
-
-        res.status(200).json({ 
-            message: "Login successful!",
-            userId: users[0].user_id 
-        });
-    } catch (error) {
-        console.error(error);
-        res.status(500).json({ error: "Server error during login." });
+    if (!user || !(await bcrypt.compare(password, user.password_hash))) {
+        return res.status(401).json({ error: "Invalid email or password." });
     }
-});
 
+    res.status(200).json({ 
+        message: "Login successful!",
+        userId: user.user_id 
+    });
+}));
 
 // READ ROUTES
-app.get('/home/:userId', async (req, res) => {
-    try {
-        const { userId } = req.params; 
-        // Create and execute our queries
-        const query1 = `SELECT * FROM Profiles WHERE user_id = ? ORDER BY name ASC;`;
-        const [profiles] = await db.query(query1, [userId]);
+app.get('/home/:userId', asyncHandler(async (req, res) => {
+    const { userId } = req.params; 
+    // Create and execute our queries
+    const query1 = `SELECT * FROM Profiles WHERE user_id = ? ORDER BY name ASC;`;
+    const [profiles] = await db.query(query1, [userId]);
 
-        res.status(200).json({ profiles });  // Send the results to the frontend
+    res.status(200).json({ profiles });  // Send the results to the frontend
+}));
 
-    } catch (error) {
-        console.error("Error fetching home profiles:", error);
-        // Send a generic error message to the browser
-        res.status(500).send("An error occurred while loading your home page.");
-    }
-});
+app.get('/profile/:userId', asyncHandler(async (req, res) => {
+    const { userId } = req.params;
+    // Create and execute our queries
+    const query1 = `SELECT * FROM Profiles WHERE user_id = ?;`;
+    const [profiles] = await db.query(query1, [userId]);
 
-app.get('/profile/:userId', async (req, res) => {
-    try {
-        const { userId } = req.params;
-        // Create and execute our queries
-        const query1 = `SELECT * FROM Profiles WHERE user_id = ?;`;
-        const [profiles] = await db.query(query1, [userId]);
+    res.status(200).json({ profiles });  // Send the results to the frontend
+}));
 
-        res.status(200).json({ profiles });  // Send the results to the frontend
+app.get('/health/:userId', asyncHandler(async (req, res) => {
+    const { userId } = req.params;
+    // Create and execute our queries
+    const query1 = `
+        SELECT DailyCheckins.* FROM DailyCheckins 
+        JOIN Profiles ON DailyCheckins.profile_id = Profiles.profile_id 
+        WHERE Profiles.user_id = ?`;
+    const [dailyCheckIns] = await db.query(query1, [userId]);
+    const query2 = `
+        SELECT VetRecords.* FROM VetRecords 
+        JOIN Profiles ON VetRecords.profile_id = Profiles.profile_id 
+        WHERE Profiles.user_id = ?`;
+    const [vetRecords] = await db.query(query2, [userId]);
+    const [profiles] = await db.query('SELECT * FROM Profiles WHERE user_id = ? ORDER BY name ASC;', [userId]);
 
-    } catch (error) {
-        console.error("Error executing queries:", error);
-        // Send a generic error message to the browser
-        res.status(500).send("An error occurred while An error occurred while loading your profile page.");
-    }
-});
-
-app.get('/health/:userId', async (req, res) => {
-    try {
-        const { userId } = req.params;
-        // Create and execute our queries
-        const query1 = `
-            SELECT DailyCheckins.* FROM DailyCheckins 
-            JOIN Profiles ON DailyCheckins.profile_id = Profiles.profile_id 
-            WHERE Profiles.user_id = ?`;
-        const [dailyCheckIns] = await db.query(query1, [userId]);
-        const query2 = `
-            SELECT VetRecords.* FROM VetRecords 
-            JOIN Profiles ON VetRecords.profile_id = Profiles.profile_id 
-            WHERE Profiles.user_id = ?`;
-        const [vetRecords] = await db.query(query2, [userId]);
-        const [profiles] = await db.query('SELECT * FROM Profiles WHERE user_id = ? ORDER BY name ASC;', [userId]);
-
-        res.status(200).json({ dailyCheckIns, vetRecords, profiles });  // Send the results to the frontend
-
-    } catch (error) {
-        console.error("Error executing queries:", error);
-        // Send a generic error message to the browser
-        res.status(500).send("An error occurred while loading your health record page.");
-    }
-});
+    res.status(200).json({ dailyCheckIns, vetRecords, profiles });  // Send the results to the frontend
+}));
 
 // CREATE ROUTE
-app.post('/home/quick-checkin', async (req, res) => {
-    try {
-        // Parse frontend form information
-        const data = req.body;
-        
-        // Create and execute our queries
-        const query1 = `CALL sp_create_daily_checkin(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, @new_id);`;
+app.post('/home/quick-checkin', asyncHandler(async (req, res) => {
+    // Parse frontend form information
+    const data = req.body;
+    
+    // Create and execute our queries
+    const query1 = `CALL sp_create_daily_checkin(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, @new_id);`;
 
-        await db.query(query1, [
-            data.pet_id,
-            data.date,             
-            data.food_morning, 
-            data.food_treat,
-            data.food_night,
-            data.toilet_pee,
-            data.toilet_poop,
-            data.mood,             
-            'n/a',                
-            'Quick check-in from Home' 
-        ]);
+    await db.query(query1, [
+        data.pet_id,
+        data.date,             
+        data.food_morning, 
+        data.food_treat,
+        data.food_night,
+        data.toilet_pee,
+        data.toilet_poop,
+        data.mood,             
+        'n/a',                
+        'Quick check-in from Home' 
+    ]);
 
-        const query2 = `SELECT @new_id AS new_id;`;
-        const [[rows]] = await db.query(query2);
-        
-        res.status(201).json({ 
-            message: "Quick check-in saved!", 
-            id: rows.new_id 
-        });
-    } catch (error) {
-        console.error("Error saving quick check-in:", error);
-        res.status(500).json({ error: "Failed to save check-in." });
+    const query2 = `SELECT @new_id AS new_id;`;
+    const [[rows]] = await db.query(query2);
+    
+    res.status(201).json({ 
+        message: "Quick check-in saved!", 
+        id: rows.new_id 
+    });
+}));
+
+app.post('/profile/create', asyncHandler(async function (req, res) {
+    // Parse frontend form information
+    let data = req.body;
+
+    // Casting
+    const userIdInt = parseInt(data.user_id, 10);
+    const profileAgeInt = parseInt(data.create_profile_age, 10);
+
+    // Create and execute our queries
+    const query1 = `CALL sp_create_profile(?, ?, ?, ?, ?, ?, ?, ?,?, @new_id);`;
+
+    await db.query(query1, [
+        userIdInt,
+        data.create_profile_name,
+        data.create_profile_gender,
+        profileAgeInt,
+        data.create_profile_type,
+        data.create_profile_breed,
+        data.create_profile_weight,
+        data.create_profile_unit,
+        data.create_profile_photo
+    ]);
+
+    const query2 = `SELECT @new_id AS new_id;`;
+    const [[rows]] = await db.query(query2);
+
+    const newProfileId = rows.new_id;
+
+    console.log(`CREATE Profiles. ID: ${newProfileId} ` +
+        `Name: ${data.create_profile_name} `
+    );
+
+    if (data.reminder_enabled) {
+        try {
+            const [hours, minutes] = data.reminder_time.split(':').map(Number);
+            let notifyDate = new Date();
+            notifyDate.setHours(hours, minutes, 0, 0);
+    
+            if (notifyDate < new Date()) {
+                notifyDate.setDate(notifyDate.getDate() + 1);
+            }
+            
+            // convert it to unix timestamp
+            const unixTimestamp = Math.floor(notifyDate.getTime() / 1000);
+    
+            const microservicePayload = {
+                user_id: userIdInt,
+                type: "PERIODIC",
+                title: `${data.create_profile_name}'s Daily Check-in`,
+                message: `Time to see how ${data.create_profile_name} is doing!`,
+                notify_at: unixTimestamp,
+                interval_seconds: 86400 // 24hrs
+            };
+    
+            const response= await axios.post(`${NOTIFICATION_SERVICE_URL}/notification`, microservicePayload);
+            const notificationId = response.data.notification_id;
+            
+            // save notification_id to our db
+            await db.query(
+                "UPDATE Profiles SET notification_id = ? WHERE profile_id = ?", 
+                [notificationId, newProfileId]
+            );
+
+            console.log(`Notification ${notificationId} scheduled for ${data.create_profile_name} (Unix: ${unixTimestamp})`);
+
+        } catch (notifyError) {
+            console.error('Notification Service Error:', notifyError.message);
+        }
     }
-});
+    // Send success status to frontend
+    res.status(200).json({ message: 'Profile created successfully' });
+}));
 
-app.post('/profile/create', async function (req, res) {
-    try {
-        // Parse frontend form information
-        let data = req.body;
+app.post('/daily_checkin/create', asyncHandler(async function (req, res) {
+    // Parse frontend form information
+    let data = req.body;
 
-        // Casting
-        const userIdInt = parseInt(data.user_id, 10);
-        const profileAgeInt = parseInt(data.create_profile_age, 10);
+    // Casting
+    const profileIdInt = parseInt(data.create_daily_checkin_pet_id, 10);
 
-        // Create and execute our queries
-        const query1 = `CALL sp_create_profile(?, ?, ?, ?, ?, ?, ?, ?, @new_id);`;
+    // Create and execute our queries
+    const query1 = `CALL sp_create_daily_checkin(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, @new_id);`;
 
-        await db.query(query1, [
-            userIdInt,
-            data.create_profile_name,
-            data.create_profile_gender,
-            profileAgeInt,
-            data.create_profile_breed,
-            data.create_profile_weight,
-            data.create_profile_unit,
-            data.create_profile_photo
-        ]);
+    await db.query(query1, [
+        profileIdInt,
+        data.create_daily_checkin_date,
+        data.create_daily_checkin_morning,
+        data.create_daily_checkin_treat,
+        data.create_daily_checkin_night,
+        data.create_daily_checkin_pee,
+        data.create_daily_checkin_poop,
+        data.create_daily_checkin_mood,
+        data.create_daily_checkin_symptoms,
+        data.create_daily_checkin_note
+    ]);
 
-        const query2 = `SELECT @new_id AS new_id;`;
-        const [[rows]] = await db.query(query2);
+    const query2 = `SELECT @new_id AS new_id;`;
+    const [[rows]] = await db.query(query2);
 
-        console.log(`CREATE Profiles. ID: ${rows.new_id} ` +
-            `Name: ${data.create_profile_name} `
-        );
+    console.log(`CREATE DailyCheckins. ID: ${rows.new_id} ` +
+        `Name: ${data.create_daily_checkin_date} `
+    );
 
-        // Send success status to frontend
-        res.status(200).json({ message: 'Profile created successfully' });
-    } catch (error) {
-        console.error('Error executing queries:', error);
-        // Send a generic error message to the browser
-        res.status(500).send(
-            'An error occurred while executing the database queries.'
-        );
-    }
-});
+    // Send success status to frontend
+    res.status(200).json({ message: 'Daily Check-In created successfully' });
+}));
 
-app.post('/daily_checkin/create', async function (req, res) {
-    try {
-        // Parse frontend form information
-        let data = req.body;
+app.post('/vet_record/create', asyncHandler(async function (req, res) {
+    // Parse frontend form information
+    let data = req.body;
 
-        // Casting
-        const profileIdInt = parseInt(data.create_daily_checkin_pet_id, 10);
+    // Casting
+    const profileIdInt = parseInt(data.create_vet_record_pet_id, 10);
 
-        // Create and execute our queries
-        const query1 = `CALL sp_create_daily_checkin(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, @new_id);`;
+    // Create and execute our queries
+    const query1 = `CALL sp_create_vet_record(?, ?, ?, ?, ?, ?, @new_id);`;
 
-        await db.query(query1, [
-            profileIdInt,
-            data.create_daily_checkin_date,
-            data.create_daily_checkin_morning,
-            data.create_daily_checkin_treat,
-            data.create_daily_checkin_night,
-            data.create_daily_checkin_pee,
-            data.create_daily_checkin_poop,
-            data.create_daily_checkin_mood,
-            data.create_daily_checkin_symptoms,
-            data.create_daily_checkin_note
-        ]);
+    await db.query(query1, [
+        profileIdInt,
+        data.create_vet_record_date,
+        data.create_vet_record_clinic,
+        data.create_vet_record_diagnosis,
+        data.create_vet_record_note,
+        data.create_vet_record_pdf
+    ]);
 
-        const query2 = `SELECT @new_id AS new_id;`;
-        const [[rows]] = await db.query(query2);
+    const query2 = `SELECT @new_id AS new_id;`;
+    const [[rows]] = await db.query(query2);
 
-        console.log(`CREATE DailyCheckins. ID: ${rows.new_id} ` +
-            `Name: ${data.create_daily_checkin_date} `
-        );
+    console.log(`CREATE VetRecords. ID: ${rows.new_id} ` +
+        `Name: ${data.create_vet_record_date} `
+    );
 
-        // Send success status to frontend
-        res.status(200).json({ message: 'Daily Check-In created successfully' });
-    } catch (error) {
-        console.error('Error executing queries:', error);
-        // Send a generic error message to the browser
-        res.status(500).send(
-            'An error occurred while executing the database queries.'
-        );
-    }
-});
-
-app.post('/vet_record/create', async function (req, res) {
-    try {
-        // Parse frontend form information
-        let data = req.body;
-
-        // Casting
-        const profileIdInt = parseInt(data.create_vet_record_pet_id, 10);
-
-        // Create and execute our queries
-        const query1 = `CALL sp_create_vet_record(?, ?, ?, ?, ?, ?, @new_id);`;
-
-        await db.query(query1, [
-            profileIdInt,
-            data.create_vet_record_date,
-            data.create_vet_record_clinic,
-            data.create_vet_record_diagnosis,
-            data.create_vet_record_note,
-            data.create_vet_record_pdf
-        ]);
-
-        const query2 = `SELECT @new_id AS new_id;`;
-        const [[rows]] = await db.query(query2);
-
-        console.log(`CREATE VetRecords. ID: ${rows.new_id} ` +
-            `Name: ${data.create_vet_record_date} `
-        );
-
-        // Send success status to frontend
-        res.status(200).json({ message: 'Vet Record created successfully' });
-    } catch (error) {
-        console.error('Error executing queries:', error);
-        // Send a generic error message to the browser
-        res.status(500).send(
-            'An error occurred while executing the database queries.'
-        );
-    }
-});
+    // Send success status to frontend
+    res.status(200).json({ message: 'Vet Record created successfully' });
+}));
 
 // DELETE ROUTE
-app.delete('/profile/delete', async function (req, res) {
-    try {
-        const data = req.body;
+app.delete('/profile/delete', asyncHandler(async function (req, res) {
+    const data = req.body;
+    const profileId = data.delete_profile_id;
 
-        if (!data.delete_profile_id) {
-            return res.status(400).json({ success: false, error: 'Missing ID' });
-        }
-        
-        const query = `CALL sp_Delete(?, ?, ?);`;
-        
-        await db.query(query, ['Profiles', 'profile_id', data.delete_profile_id]);
-
-        console.log(`Deleted Profile ID: ${data.delete_profile_id}`);
-        res.json({ success: true });
-
-    } catch (error) {
-        console.error("Error in /profile/delete:", error);
-        
-        // CHECK FOR FOREIGN KEY ERROR
-        if (error.errno === 1451) {
-            return res.status(400).json({ 
-                success: false, 
-                message: "Cannot delete: This item is currently linked to an active record." 
-            });
-        }
-        res.status(500).json({ success: false, error: 'Database error' });
+    if (!profileId) {
+        return res.status(400).json({ success: false, error: 'Missing ID' });
     }
-});
 
-app.delete('/daily_checkin/delete', async function (req, res) {
-    try {
-        const data = req.body;
+    const [rows] = await db.query(
+        "SELECT notification_id FROM Profiles WHERE profile_id = ?", 
+        [profileId]
+    );
 
-        if (!data.delete_daily_checkin_id) {
-            return res.status(400).json({ success: false, error: 'Missing ID' });
+    if (rows.length > 0 && rows[0].notification_id) {
+        const notifId = rows[0].notification_id;
+        try {
+            await axios.delete(`${NOTIFICATION_SERVICE_URL}/notification/${notifId}`);
+            console.log(`Successfully cancelled notification ID: ${notifId}`);
+        } catch (microserviceError) {
+            console.error('Could not delete from microservice:', microserviceError.message);
         }
-        
-        const query = `CALL sp_Delete(?, ?, ?);`;
-        
-        await db.query(query, ['DailyCheckins', 'daily_checkin_id', data.delete_daily_checkin_id]);
-
-        console.log(`Deleted Daily Check-In ID: ${data.delete_daily_checkin_id}`);
-        res.json({ success: true });
-
-    } catch (error) {
-        console.error("Error in /daily_checkin/delete:", error);
-        
-        // CHECK FOR FOREIGN KEY ERROR
-        if (error.errno === 1451) {
-            return res.status(400).json({ 
-                success: false, 
-                message: "Cannot delete: This item is currently linked to an active record." 
-            });
-        }
-        res.status(500).json({ success: false, error: 'Database error' });
     }
-});
 
-app.delete('/vet_record/delete', async function (req, res) {
-    try {
-        const data = req.body;
+    const query = `CALL sp_Delete(?, ?, ?);`;
+    await db.query(query, ['Profiles', 'profile_id', data.delete_profile_id]);
 
-        if (!data.delete_vet_record_id) {
-            return res.status(400).json({ success: false, error: 'Missing ID' });
-        }
-        
-        const query = `CALL sp_Delete(?, ?, ?);`;
-        
-        await db.query(query, ['VetRecords', 'vet_record_id', data.delete_vet_record_id]);
+    console.log(`Deleted Profile ID: ${data.delete_profile_id}`);
+    res.json({ success: true });
+}));
 
-        console.log(`Deleted Vet Record ID: ${data.delete_vet_record_id}`);
-        res.json({ success: true });
+app.delete('/daily_checkin/delete', asyncHandler(async function (req, res) {
+    const data = req.body;
 
-    } catch (error) {
-        console.error("Error in /vet_record/delete:", error);
-        
-        // CHECK FOR FOREIGN KEY ERROR
-        if (error.errno === 1451) {
-            return res.status(400).json({ 
-                success: false, 
-                message: "Cannot delete: This item is currently linked to an active record." 
-            });
-        }
-        res.status(500).json({ success: false, error: 'Database error' });
+    if (!data.delete_daily_checkin_id) {
+        return res.status(400).json({ success: false, error: 'Missing ID' });
     }
+    
+    const query = `CALL sp_Delete(?, ?, ?);`;
+    
+    await db.query(query, ['DailyCheckins', 'daily_checkin_id', data.delete_daily_checkin_id]);
+
+    console.log(`Deleted Daily Check-In ID: ${data.delete_daily_checkin_id}`);
+    res.json({ success: true });
+}));
+
+app.delete('/vet_record/delete', asyncHandler(async function (req, res) {
+    const data = req.body;
+
+    if (!data.delete_vet_record_id) {
+        return res.status(400).json({ success: false, error: 'Missing ID' });
+    }
+    
+    const query = `CALL sp_Delete(?, ?, ?);`;
+    
+    await db.query(query, ['VetRecords', 'vet_record_id', data.delete_vet_record_id]);
+
+    console.log(`Deleted Vet Record ID: ${data.delete_vet_record_id}`);
+    res.json({ success: true });
+}));
+
+// Global Error Handler
+app.use((err, req, res, next) => {
+    console.error(">>> SERVER ERROR:", err.stack);
+
+    // handle MySQL duplicate entry
+    if (err.errno === 1062) {
+        return res.status(400).json({ error: "This record already exists (Duplicate Entry)." });
+    }
+
+    // handle MySQL foreign key constraint
+    if (err.errno === 1451) {
+        return res.status(400).json({ 
+            success: false, 
+            message: "Cannot delete: This item is currently linked to an active record." 
+        });
+    }
+
+    // default fallback error
+    const statusCode = res.statusCode === 200 ? 500 : res.statusCode;
+    res.status(statusCode).json({
+        success: false,
+        message: err.message || "An unexpected server error occurred."
+    });
 });
 
 
 // ########################################
 // ########## LISTENER
 
-app.listen(PORT, function () {
-    console.log('Express started on http://127.0.0.1:' + PORT + '; press Ctrl-C to terminate.');
+server.listen(PORT, () => {
+    console.log(`Unified Server running on http://localhost:${PORT}`);
+    console.log(`- React API: http://localhost:${PORT}`);
+    console.log(`- Webhook: http://localhost:${PORT}/webhook`);
+    console.log(`- Sockets: http://localhost:${PORT}`);
 });

@@ -12,9 +12,10 @@ import AddHealth from './pages/AddHealth';
 // Components
 import Navigation from './components/Navigation';
 import ProtectedRoute from './components/ProtectedRoute';
+import NotificationListener from './components/NotificationListener';
 
 // Define the backend port and URL for API requests
-const backendPort = 9971;
+const backendPort = 5123;
 const backendURL = `http://127.0.0.1:${backendPort}`;
 
 function App() {
@@ -24,12 +25,15 @@ function App() {
     return (
         <> 
             {/* Hide title and nav before user login */}
-            {!isWelcomePage &&
-                <div className="home-banner">
-                    <h1 className="header-title">Pet Daily Care</h1>
-                </div>
-            }
-            {!isWelcomePage && <Navigation />}
+            {!isWelcomePage && (
+                <>
+                    <NotificationListener />
+                    <header className="home-banner">
+                        <h1 className="header-title">Pet Daily Care</h1>
+                    </header>
+                    <Navigation />
+                </>
+            )}
                 <Routes>
                     <Route className="nav-item" path="/" element={<Welcome backendURL={backendURL} />} />
                     <Route className="nav-item" path="/home" element={<ProtectedRoute><Home backendURL={backendURL}/></ProtectedRoute>} />
