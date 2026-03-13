@@ -99,136 +99,113 @@ const AddProfile = ({ backendURL }) => {
             <div className="header-container">
                 <h2 className="section-header">Add New Pet Profile</h2>
             </div>
-
+    
             <form className="pet-form" onSubmit={handleSubmit}>
                 <div className="form-content">
-                    {/* Photo Upload */}
+                    {/* Left Side: Photo Path & Preview */}
                     <div className="photo-upload-section">
-                        <label htmlFor="photo_full_path">Photo Full Path: </label>
-                        <input
-                            type="text"
-                            name="photo_full_path"
-                            id="photo_full_path"
-                            placeholder="e.g., C:\Users\Documents\dog.jpg"
-                            value={formData.photo_full_path}
-                            onChange={handleChange}
-                            required
-                        />
-                        <small style={{ display: 'block', color: '#666', marginTop: '4px' }}>
-                            Please paste the absolute path to the image on your computer.
-                        </small>
-                    </div>
-
-                    {/* Input Fields */}
-                    <div className="fields-section">
-                        <div className="form-group">
-                            <label htmlFor="create_profile_name">Name: </label>
+                        <div className="image-placeholder">
+                            <span className="placeholder-icon">🐾</span>
+                            <p>Pet Photo</p>
+                        </div>
+                        <div className="path-input-group">
+                            <label htmlFor="photo_full_path">Photo Full Path</label>
                             <input
                                 type="text"
-                                name="create_profile_name"
-                                id="create_profile_name"
-                                value={formData.create_profile_name}
+                                name="photo_full_path"
+                                id="photo_full_path"
+                                placeholder="C:\Users\Documents\dog.jpg"
+                                value={formData.photo_full_path}
                                 onChange={handleChange}
+                                required
                             />
+                            <small>Paste the absolute path to your image.</small>
                         </div>
-
+                    </div>
+    
+                    {/* Right Side: Input Fields */}
+                    <div className="fields-section">
                         <div className="form-group">
-                            <label htmlFor="create_profile_gender">Gender: </label>
-                            <select id="create_profile_gender" name="create_profile_gender" value={formData.create_profile_gender} onChange={handleChange}>
+                            <label>Name</label>
+                            <input type="text" name="create_profile_name" value={formData.create_profile_name} onChange={handleChange} />
+                        </div>
+    
+                        <div className="form-group">
+                            <label>Gender</label>
+                            <select name="create_profile_gender" value={formData.create_profile_gender} onChange={handleChange}>
                                 <option value="boy">Boy</option>
                                 <option value="girl">Girl</option>
                             </select>
                         </div>
-                      
+    
                         <div className="form-group">
-                            <label htmlFor="create_profile_age">Age: </label>
-                            <select id="create_profile_age" name="create_profile_age" value={formData.create_profile_age} onChange={handleChange}>
+                            <label>Age</label>
+                            <select name="create_profile_age" value={formData.create_profile_age} onChange={handleChange}>
                                 {AGES.map(age => (
-                                  <option key={age} value={age}>{age} {age === 1 ? 'year' : 'years'} old</option>
+                                    <option key={age} value={age}>{age} {age === 1 ? 'year' : 'years'} old</option>
                                 ))}
                             </select>
                         </div>
-                      
-                        
+    
                         <div className="form-group">
-                            <label htmlFor="create_profile_type">Pet Type: </label>
-                            <select id="create_profile_type" name="create_profile_type" value={formData.create_profile_type} onChange={handleChange}>
+                            <label>Pet Type</label>
+                            <select name="create_profile_type" value={formData.create_profile_type} onChange={handleChange}>
                                 <option value="dog">Dog</option>
                                 <option value="cat">Cat</option>
                             </select>
                         </div>
-
+    
                         <div className="form-group">
-                            <label htmlFor="create_profile_breed">Breed: </label>
-                            <select
-                                name="create_profile_breed"
-                                id="create_profile_breed"
-                                value={formData.create_profile_breed}
-                                onChange={handleChange}
-                            >
+                            <label>Breed</label>
+                            <select name="create_profile_breed" value={formData.create_profile_breed} onChange={handleChange}>
                                 <option value="">Select a Breed</option>
                                 {(formData.create_profile_type === 'dog' ? DOG_BREEDS : CAT_BREEDS).map(breed => (
-                                  <option key={breed} value={breed}>{breed}</option>
+                                    <option key={breed} value={breed}>{breed}</option>
                                 ))}
                             </select>
                         </div>
-
-                        <div className="form-group">         
-                            <label htmlFor="create_profile_weight">Weight: </label>
-                            <input
-                                type="decimal"
-                                name="create_profile_weight"
-                                id="create_profile_weight"
-                                value={formData.create_profile_weight}
-                                onChange={handleChange}
-                            />
-                            <select 
-                                className="unit-selector"
-                                name="create_profile_unit"
-                                id="create_profile_unit"
-                                value={formData.create_profile_unit}
-                                onChange={(e) => handleUnitConversion(e.target.value)}
-                            >
-                                <option value="lb">lb</option>
-                                <option value="kg">kg</option>
-                            </select>
-                        </div> 
+    
+                        <div className="form-group">
+                            <label>Weight</label>
+                            <div className="input-with-unit">
+                                <input type="number" name="create_profile_weight" value={formData.create_profile_weight} onChange={handleChange} />
+                                <select className="unit-selector" name="create_profile_unit" value={formData.create_profile_unit} onChange={(e) => handleUnitConversion(e.target.value)}>
+                                    <option value="lb">lb</option>
+                                    <option value="kg">kg</option>
+                                </select>
+                            </div>
+                        </div>
                     </div>
                 </div>
-
-                <div className="fields-section">
-                    <div className="form-group">
-                        <label>
-                            <input
-                                type="checkbox"
-                                name="reminder_enabled"
-                                checked={formData.reminder_enabled}
-                                onChange={handleChange}
-                            />
-                            Remind me for daily check-ins
-                        </label>
-                    </div>
-
-                    {formData.reminder_enabled && (
-                        <div className="form-group">
-                            <label htmlFor="reminder_time">Reminder Time: </label>
+    
+                {/* Bottom Section: Notifications & Button */}
+                <div className="reminder-section">
+                    <div className="reminder-box">
+                        <input
+                            type="checkbox"
+                            id="reminder_enabled"
+                            name="reminder_enabled"
+                            checked={formData.reminder_enabled}
+                            onChange={handleChange}
+                        />
+                        <label htmlFor="reminder_enabled">Remind me for daily check-ins</label>
+                        
+                        {formData.reminder_enabled && (
                             <input
                                 type="time"
+                                className="time-picker"
                                 name="reminder_time"
-                                id="reminder_time"
                                 value={formData.reminder_time}
                                 onChange={handleChange}
                             />
-                        </div>
-                    )}
+                        )}
+                    </div>
+    
+                    <button type="submit" className="save-btn">
+                        Save Profile
+                    </button>
                 </div>
             </form>
-            
-          <div>
-            <button type="submit" onClick={handleSubmit} className="save-btn">
-              Save Profile
-            </button>
-          </div>
         </div>
     );
 };

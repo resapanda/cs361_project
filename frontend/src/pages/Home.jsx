@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import WelcomePopup from '../components/WelcomePopup';
+import PetPhoto from '../components/PetPhoto';
 
 const Home = ({ backendURL }) => {
     const DEFAULT_PET_IMAGE = "/images/placeholder.png";
@@ -86,7 +87,11 @@ const Home = ({ backendURL }) => {
                     </div>
 
                     <div className="profile-brief-card">
-                        <img src={selectedPet.photo_url || DEFAULT_PET_IMAGE} alt={selectedPet.name} className="profile-img-large" />
+                        <PetPhoto 
+                            profileId={selectedPet.profile_id} 
+                            backendURL={backendURL} 
+                            defaultImage={DEFAULT_PET_IMAGE} 
+                        />
                         <div className="profile-details">
                             <h3>{selectedPet.name}</h3>
                             <p>Weight: {selectedPet.weight} lb</p>
