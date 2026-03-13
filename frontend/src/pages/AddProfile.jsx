@@ -11,7 +11,7 @@ const INITIAL_FORM_STATE = {
     create_profile_breed: '',
     create_profile_weight: '',
     create_profile_unit: 'lb',
-    create_profile_photo: '',
+    photo_full_path: '',
     reminder_enabled: false,
     reminder_time: '20:00'
 };
@@ -104,9 +104,19 @@ const AddProfile = ({ backendURL }) => {
                 <div className="form-content">
                     {/* Photo Upload */}
                     <div className="photo-upload-section">
-                        <div className="photo-circle">
-                            <span>Upload Photo</span>
-                        </div>
+                        <label htmlFor="photo_full_path">Photo Full Path: </label>
+                        <input
+                            type="text"
+                            name="photo_full_path"
+                            id="photo_full_path"
+                            placeholder="e.g., C:\Users\Documents\dog.jpg"
+                            value={formData.photo_full_path}
+                            onChange={handleChange}
+                            required
+                        />
+                        <small style={{ display: 'block', color: '#666', marginTop: '4px' }}>
+                            Please paste the absolute path to the image on your computer.
+                        </small>
                     </div>
 
                     {/* Input Fields */}

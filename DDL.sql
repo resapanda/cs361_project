@@ -38,10 +38,11 @@ TABLE Profiles (
     gender VARCHAR(10) NOT NULL CHECK (gender IN ('boy', 'girl')),
     age INT CHECK (age >= 0),
     breed VARCHAR(100) DEFAULT 'Mixed Breed',
+    type VARCHAR(10) DEFAULT 'dog',
     weight DECIMAL(5, 2) CHECK (weight > 0),
     unit VARCHAR(10) DEFAULT 'lb',
-    photo_url VARCHAR(255),
     notification_id INT,
+    file_id VARCHAR(8),
     PRIMARY KEY (profile_id),
     CONSTRAINT fk_Users_Profiles FOREIGN KEY (user_id) REFERENCES Users (user_id) ON DELETE CASCADE
 );

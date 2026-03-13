@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react';
 import { Link } from "react-router-dom";
 import "../CreateProfileForm.css";
 import DeleteForm from '../components/DeleteForm';
+import PetPhoto from '../components/PetPhoto';
 
 const Profile = ({backendURL}) => {
     const [profiles, setProfiles] = useState([]);
@@ -61,7 +62,11 @@ const Profile = ({backendURL}) => {
             <div className="profile-list">
                 {profiles.map((profile, index) => (
                     <div key={index} className="pet-profile-card">
-                        <img src={profile.photo_url || DEFAULT_PET_IMAGE} alt={profile.name} className="profile-img-large" />
+                        <PetPhoto 
+                            profileId={profile.profile_id} 
+                            backendURL={backendURL} 
+                            defaultImage={DEFAULT_PET_IMAGE} 
+                        />
                         
                         <div className="pet-info-main">
                             <h3 className="pet-name-title">

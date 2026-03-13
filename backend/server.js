@@ -30,7 +30,7 @@ const asyncHandler = (fn) => (req, res, next) => {
 
 
 const PORT = 5123;
-
+const path = require('path');
 const bcrypt = require('bcryptjs');
 
 // microservices url
@@ -93,6 +93,36 @@ app.get('/api/daily-goal/:profileId', asyncHandler(async (req, res) => {
     res.json({
         daily_target: response.data.daily_caloric_target
     });
+}));
+
+app.get('/api/profile/:id/photo', asyncHandler(async function (req, res) {
+    const profileId = req.params.id;
+
+    try {
+        const [rows] = await db.query(
+            "SELECT file_id FROM Profiles WHERE profile_id = ?", 
+            [profileId]
+        );
+
+        if (!rows || rows.length === 0 || !rows[0].file_id) {
+            return res.status(200).json({ imageData: null }); 
+        }
+
+        const fileId = rows[0].file_id;
+
+        const response = await axios.get(`${FILE_SERVICE_URL}/get-file/${fileId}`);
+        
+        const imageExtension = response.data.type; 
+        const base64Blob = response.data.blob;
+
+        res.json({
+            imageData: `data:image/${imageExtension};base64,${base64Blob}`
+        });
+
+    } catch (error) {
+        console.error("Photo Fetch Error:", error.message);
+        res.status(404).json({ error: "Image not found" });
+    }
 }));
 
 // REGISTER ROUTE
@@ -201,7 +231,7 @@ app.post('/profile/create', asyncHandler(async function (req, res) {
     const profileAgeInt = parseInt(data.create_profile_age, 10);
 
     // Create and execute our queries
-    const query1 = `CALL sp_create_profile(?, ?, ?, ?, ?, ?, ?, ?,?, @new_id);`;
+    const query1 = `CALL sp_create_profile(?, ?, ?, ?, ?, ?, ?, ?, @new_id);`;
 
     await db.query(query1, [
         userIdInt,
@@ -215,15 +245,50 @@ app.post('/profile/create', asyncHandler(async function (req, res) {
         data.create_profile_photo
     ]);
 
-    const query2 = `SELECT @new_id AS new_id;`;
-    const [[rows]] = await db.query(query2);
-
-    const newProfileId = rows.new_id;
+    const [idRows] = await db.query("SELECT @new_id AS new_id;");
+    const newProfileId = idRows[0].new_id;
 
     console.log(`CREATE Profiles. ID: ${newProfileId} ` +
         `Name: ${data.create_profile_name} `
     );
 
+    // file microservice 
+    if (data.photo_full_path) {
+        try {
+            const fullPath = data.photo_full_path.trim();
+
+            // find the last slash
+            const lastSlashIndex = fullPath.lastIndexOf('/');
+            // get file path without last slash
+            const filePath = fullPath.substring(0, lastSlashIndex); 
+
+            const fullFileName = fullPath.substring(lastSlashIndex + 1);
+
+            // split the name from the dot
+            const lastDotIndex = fullFileName.lastIndexOf('.');
+            const fileName = fullFileName.substring(0, lastDotIndex); 
+            const fileType = fullFileName.substring(lastDotIndex + 1);
+
+            const fileServicePayload = {
+                filePath: filePath,           
+                fileName: fileName,        
+                type: fileType
+            };
+
+            const response = await axios.post(`${FILE_SERVICE_URL}/register-file`, fileServicePayload);
+            const fileId = response.data.fileId;
+
+            await db.query(
+                "UPDATE Profiles SET file_id = ? WHERE profile_id = ?", 
+                [fileId, newProfileId]
+            );
+            console.log(`File registered: ${fileId}`);
+        } catch (fileError) {
+            console.error('File Service Error:', fileError.message);
+        }
+    }
+
+    // notification microservice
     if (data.reminder_enabled) {
         try {
             const [hours, minutes] = data.reminder_time.split(':').map(Number);
